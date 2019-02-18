@@ -12,11 +12,10 @@ START=99
 ss_confdir=/var/etc/shadowsocks-libev
 ss_bindir=/usr/bin
 
-ss_validate() {
-	uci_load_validate shadowsocks-libev "$@"
-}
 
-add_common_validate_options_() {
+# common
+
+with_common_validate_options() {
 	"$@" \
 		'disabled:bool:0' \
 		'fast_open:bool:0' \
@@ -30,7 +29,8 @@ add_common_validate_options_() {
 		'user:string'
 }
 
-ss_mkjson_common_conf() {
+add_common_options_json() {
+	json_add_boolean use_syslog 1
 	json_add_boolean fast_open "$fast_open"
 	json_add_boolean ipv6_first "$ipv6_first"
 	json_add_boolean no_delay "$no_delay"
@@ -41,11 +41,11 @@ ss_mkjson_common_conf() {
 	[ -z "$user" ] || json_add_string user "$user"
 }
 
-validate_common_server_options_() {
+validate_server_options() {
 	local stream_methods='"table", "rc4", "rc4-md5", "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "bf-cfb", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "salsa20", "chacha20", "chacha20-ietf"'
 	local aead_methods='"aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305"'
 
-	ss_validate "$@" \
+	uci_load_validate shadowsocks-libev "$@" \
 		'disabled:bool:0' \
 		'server:host' \
 		'server_port:port' \
@@ -54,7 +54,7 @@ validate_common_server_options_() {
 		"method:or($stream_methods, $aead_methods)"
 }
 
-ss_mkjson_common_server_conf() {
+add_server_options_json() {
 	[ "$2" = 0 ] || return 1
 	[ "$disabled" = 0 ] || return 1
 	[ -n "$server_port" ] || return 1
@@ -66,115 +66,170 @@ ss_mkjson_common_server_conf() {
 	[ -z "$method" ] || json_add_string method "$method"
 }
 
-validate_server_section() {
-	validate_common_server_options_ server "$1" "$2"
-}
-
-ss_mkjson_server_conf() {
-	local cfgserver
-
-	config_get cfgserver "$cfg" server
-	[ -n "$cfgserver" ] || return 1
-	validate_server_section "$cfgserver" ss_mkjson_common_server_conf
-}
-
-validate_common_client_options_() {
-	add_common_validate_options_ \
-		ss_validate "$@" \
+validate_client_options() {
+	uci_load_validate shadowsocks-libev "$@" \
 		'server:uci("shadowsocks-libev", "@server")' \
 		'local_address:host:0.0.0.0' \
 		'local_port:port'
 }
 
-ss_mkjson_common_client_conf() {
-	ss_mkjson_common_conf
-	ss_mkjson_server_conf || return 1
-
+add_client_options_json() {
 	json_add_string local_address "$local_address"
 	[ -z "$local_port" ] || json_add_int local_port "$local_port"
 }
 
-validate_ss_local_section() {
-	validate_common_client_options_ ss_local "$1" "$2"
+set_common_procd_params() {
+	local bin="$1"
+	local confjson="$2"
+	local verbose="$3"
+
+	procd_set_param command "$bin" -c "$confjson"
+	[ "$verbose" = 0 ] || procd_append_param command -v
+	procd_set_param file "$confjson"
+	procd_set_param respawn
 }
 
-ss_mkjson_ss_local_conf() {
-	ss_mkjson_common_client_conf
+
+# server
+
+validate_server_section() {
+	validate_server_options server "$1" "$2"
 }
+
+
+# ss_local
+
+validate_ss_local_section() {
+	with_common_validate_options \
+		validate_client_options ss_local "$1" "$2"
+}
+
+start_ss_local_instance() {
+	local cfg="$1"
+	local bin="$ss_bindir/ss-local"
+	local confjson="$ss_confdir/ss_local.$cfg.json"
+
+	[ -x "$bin" ] || return
+	[ "$2" = 0 ] || return 1
+	[ "$disabled" = 0 ] || return
+	[ -n "$server" ] || return 1
+
+	json_init
+	add_common_options_json
+	add_client_options_json
+	validate_server_section "$server" add_server_options_json || return 1
+	json_dump -i > "$confjson"
+
+	procd_open_instance "ss_local.$cfg"
+	set_common_procd_params "$bin" "$confjson" "$verbose"
+	procd_close_instance
+}
+
+
+# ss_redir
 
 validate_ss_redir_section() {
-	validate_common_client_options_ ss_redir "$1" "$2"
+	with_common_validate_options \
+		validate_client_options ss_redir "$1" "$2"
 }
 
-ss_mkjson_ss_redir_conf() {
-	ss_mkjson_common_client_conf
+start_ss_redir_instance() {
+	local cfg="$1"
+	local bin="$ss_bindir/ss-redir"
+	local confjson="$ss_confdir/ss_redir.$cfg.json"
+	local linkedserver
+
+	[ -x "$bin" ] || return
+	[ "$2" = 0 ] || return 1
+	[ "$disabled" = 0 ] || return
+	[ -n "$server" ] || return 1
+
+	json_init
+	add_common_options_json
+	add_client_options_json
+	validate_server_section "$server" add_server_options_json || return 1
+	json_dump -i > "$confjson"
+
+	procd_open_instance "ss_redir.$cfg"
+	set_common_procd_params "$bin" "$confjson" "$verbose"
+	procd_close_instance
+
+	config_get linkedserver "$server" server
+	ss_redir_servers="$ss_redir_servers $linkedserver"
+	if [ "$mode" = tcp_only -o "$mode" = "tcp_and_udp" ]; then
+		eval "ss_rules_redir_tcp_$cfg=$local_port"
+	fi
+	if [ "$mode" = udp_only -o "$mode" = "tcp_and_udp" ]; then
+		eval "ss_rules_redir_udp_$cfg=$local_port"
+	fi
 }
+
+
+# ss_server
 
 validate_ss_server_section() {
-	add_common_validate_options_ \
-		validate_common_server_options_ ss_server "$1" "$2" \
+	with_common_validate_options \
+		validate_server_options ss_server "$1" "$2" \
 		'bind_address:ipaddr'
 }
 
-ss_mkjson_ss_server_conf() {
-	ss_mkjson_common_conf
-	ss_mkjson_common_server_conf "$cfg" 0
-}
-
-validate_ss_tunnel_section() {
-	validate_common_client_options_ ss_tunnel "$1" "$2" \
-		'tunnel_address:regex(".+\:[0-9]+")'
-}
-
-ss_mkjson_ss_tunnel_conf() {
-	ss_mkjson_common_client_conf || return 1
-	[ -n "$tunnel_address" ] || return 1
-
-	json_add_string tunnel_address "$tunnel_address"
-}
-
-ss_xxx() {
+start_ss_server_instance() {
 	local cfg="$1"
-	local bin="$ss_bindir/${cfgtype/_/-}"
-	local confjson="$ss_confdir/$cfgtype.$cfg.json"
+	local bin="$ss_bindir/ss-server"
+	local confjson="$ss_confdir/ss_server.$cfg.json"
 
 	[ -x "$bin" ] || return
 	[ "$2" = 0 ] || return 1
 	[ "$disabled" = 0 ] || return
 
 	json_init
-	json_add_boolean use_syslog 1
-	eval "ss_mkjson_${cfgtype}_conf" || return 1
+	add_common_options_json
+	add_server_options_json "$cfg" "$2" || return 1
 	json_dump -i > "$confjson"
 
-	procd_open_instance "$cfgtype.$cfg"
-	procd_set_param command "$bin" -c "$confjson"
-	[ "$verbose" = 0 ] || procd_append_param command -v
+	procd_open_instance "ss_server.$cfg"
+	set_common_procd_params "$bin" "$confjson" "$verbose"
 	[ -z "$bind_address" ] || procd_append_param command -b "$bind_address"
-	procd_set_param file "$confjson"
-	procd_set_param respawn
 	procd_close_instance
-	ss_rules_cb
 }
 
-ss_rules_cb() {
-	local cfgserver server
 
-	if [ "$cfgtype" = ss_redir ]; then
-		config_get cfgserver "$cfg" server
-		config_get server "$cfgserver" server
-		ss_redir_servers="$ss_redir_servers $server"
-		if [ "$mode" = tcp_only -o "$mode" = "tcp_and_udp" ]; then
-			eval "ss_rules_redir_tcp_$cfg=$local_port"
-		fi
-		if [ "$mode" = udp_only -o "$mode" = "tcp_and_udp" ]; then
-			eval "ss_rules_redir_udp_$cfg=$local_port"
-		fi
-	fi
+# ss_tunnel
+
+validate_ss_tunnel_section() {
+	with_common_validate_options \
+		validate_client_options ss_tunnel "$1" "$2" \
+		'tunnel_address:regex(".+\:[0-9]+")'
 }
+
+start_ss_tunnel_instance() {
+	local cfg="$1"
+	local bin="$ss_bindir/ss-tunnel"
+	local confjson="$ss_confdir/ss_tunnel.$cfg.json"
+
+	[ -x "$bin" ] || return
+	[ "$2" = 0 ] || return 1
+	[ "$disabled" = 0 ] || return
+	[ -n "$server" ] || return 1
+	[ -n "$tunnel_address" ] || return 1
+
+	json_init
+	add_common_options_json
+	add_client_options_json
+	validate_server_section "$server" add_server_options_json || return 1
+	json_add_string tunnel_address "$tunnel_address"
+	json_dump -i > "$confjson"
+
+	procd_open_instance "ss_tunnel.$cfg"
+	set_common_procd_params "$bin" "$confjson" "$verbose"
+	procd_close_instance
+}
+
+
+# ss_rules
 
 validate_ss_rules_section() {
-	ss_validate ss_rules "$1" "$2" \
+	uci_load_validate shadowsocks-libev ss_rules "$1" "$2" \
 		'disabled:bool:0' \
 		'redir_tcp:uci("shadowsocks-libev", "@ss_redir")' \
 		'redir_udp:uci("shadowsocks-libev", "@ss_redir")' \
@@ -193,7 +248,7 @@ validate_ss_rules_section() {
 		'ipt_args:string'
 }
 
-ss_rules() {
+set_ss_rules() {
 	local bin="$ss_bindir/ss-rules"
 	local local_port_tcp local_port_udp
 	local args
@@ -236,36 +291,46 @@ ss_rules_call() {
 		|| "$bin" "$@" -f
 }
 
-start_service() {
-	local cfgtype
-
-	mkdir -p "$ss_confdir"
-	config_load shadowsocks-libev
-	for cfgtype in ss_local ss_redir ss_server ss_tunnel; do
-		config_foreach validate_${cfgtype}_section $cfgtype ss_xxx
-	done
-	validate_ss_rules_section ss_rules ss_rules
-}
-
-stop_service() {
+clear_ss_rules() {
 	local bin="$ss_bindir/ss-rules"
 
 	[ -x "$bin" ] && {
 		"$bin" -f
 		"$bin" -6 -f
 	}
+}
+
+
+# main
+
+start_service() {
+	mkdir -p "$ss_confdir"
+	config_load shadowsocks-libev
+
+	config_foreach validate_ss_local_section ss_local start_ss_local_instance
+	config_foreach validate_ss_redir_section ss_redir start_ss_redir_instance
+	config_foreach validate_ss_server_section ss_server start_ss_server_instance
+	config_foreach validate_ss_tunnel_section ss_tunnel start_ss_tunnel_instance
+
+	validate_ss_rules_section ss_rules set_ss_rules
+}
+
+stop_service() {
+	clear_ss_rules
+
 	rm -rf "$ss_confdir"
 }
 
 service_triggers() {
 	procd_add_reload_interface_trigger wan
 	procd_add_reload_trigger shadowsocks-libev
+
 	procd_open_validate
 	validate_server_section
 	validate_ss_local_section
 	validate_ss_redir_section
-	validate_ss_rules_section
 	validate_ss_server_section
 	validate_ss_tunnel_section
+	validate_ss_rules_section
 	procd_close_validate
 }

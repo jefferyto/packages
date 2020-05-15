@@ -1,0 +1,454 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - 'build/*/**'
+
+env:
+  SDK_HOST: downloads.openwrt.org
+  BRANCH: master
+
+jobs:
+  get-targets:
+    runs-on: ubuntu-latest
+    env:
+      ARCHS: aarch64 arc arm mips mipsel mips64 powerpc x86
+      TARGETS_aarch64: |
+        {
+          "ARCH": "aarch64",
+          "NAME": "armvirt-64",
+          "DETAILS": "generic",
+          "SDK_PATH": "snapshots/targets/armvirt/64",
+          "SDK_FILE": "openwrt-sdk-armvirt-64_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "aarch64",
+          "NAME": "mvebu-cortexa72",
+          "DETAILS": "cortex-a72",
+          "SDK_PATH": "snapshots/targets/mvebu/cortexa72",
+          "SDK_FILE": "openwrt-sdk-mvebu-cortexa72_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "aarch64",
+          "NAME": "sunxi-cortexa53",
+          "DETAILS": "cortex-a53",
+          "SDK_PATH": "snapshots/targets/sunxi/cortexa53",
+          "SDK_FILE": "openwrt-sdk-sunxi-cortexa53_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_arc: |
+        {
+          "ARCH": "arc",
+          "NAME": "arc770-generic",
+          "DETAILS": "arc770",
+          "SDK_PATH": "snapshots/targets/arc770/generic",
+          "SDK_FILE": "openwrt-sdk-arc770-generic_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "arc",
+          "NAME": "archs38-generic",
+          "DETAILS": "archs",
+          "SDK_PATH": "snapshots/targets/archs38/generic",
+          "SDK_FILE": "openwrt-sdk-archs38-generic_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_arm: |
+        {
+          "ARCH": "arm",
+          "NAME": "armvirt-32",
+          "DETAILS": "cortex-a15, neon-vfpv4",
+          "SDK_PATH": "snapshots/targets/armvirt/32",
+          "SDK_FILE": "openwrt-sdk-armvirt-32_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "arm",
+          "NAME": "bcm27xx-bcm2708",
+          "DETAILS": "arm1176jzf-s, vfp",
+          "SDK_PATH": "snapshots/targets/bcm27xx/bcm2708",
+          "SDK_FILE": "openwrt-sdk-bcm27xx-bcm2708_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "arm",
+          "NAME": "imx6",
+          "DETAILS": "cortex-a9, neon",
+          "SDK_PATH": "snapshots/targets/imx6/generic",
+          "SDK_FILE": "openwrt-sdk-imx6_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "arm",
+          "NAME": "kirkwood",
+          "DETAILS": "xscale",
+          "SDK_PATH": "snapshots/targets/kirkwood/generic",
+          "SDK_FILE": "openwrt-sdk-kirkwood_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "arm",
+          "NAME": "mvebu-cortexa9",
+          "DETAILS": "cortex-a9, vfpv3-d16",
+          "SDK_PATH": "snapshots/targets/mvebu/cortexa9",
+          "SDK_FILE": "openwrt-sdk-mvebu-cortexa9_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_mips: |
+        {
+          "ARCH": "mips",
+          "NAME": "bcm63xx-generic",
+          "DETAILS": "mips32",
+          "SDK_PATH": "snapshots/targets/bcm63xx/generic",
+          "SDK_FILE": "openwrt-sdk-bcm63xx-generic_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "mips",
+          "NAME": "lantiq-xrx200",
+          "DETAILS": "24kc",
+          "SDK_PATH": "snapshots/targets/lantiq/xrx200",
+          "SDK_FILE": "openwrt-sdk-lantiq-xrx200_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "mips",
+          "NAME": "malta-be",
+          "DETAILS": "24kc",
+          "SDK_PATH": "snapshots/targets/malta/be",
+          "SDK_FILE": "openwrt-sdk-malta-be_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_mipsel: |
+        {
+          "ARCH": "mipsel",
+          "NAME": "bcm47xx-generic",
+          "DETAILS": "mips32",
+          "SDK_PATH": "snapshots/targets/bcm47xx/generic",
+          "SDK_FILE": "openwrt-sdk-bcm47xx-generic_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "mipsel",
+          "NAME": "bcm47xx-mips74k",
+          "DETAILS": "74kc",
+          "SDK_PATH": "snapshots/targets/bcm47xx/mips74k",
+          "SDK_FILE": "openwrt-sdk-bcm47xx-mips74k_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "mipsel",
+          "NAME": "pistachio",
+          "DETAILS": "24kc, 24kf",
+          "SDK_PATH": "snapshots/targets/pistachio/generic",
+          "SDK_FILE": "openwrt-sdk-pistachio_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "mipsel",
+          "NAME": "ramips-mt7620",
+          "DETAILS": "24kc",
+          "SDK_PATH": "snapshots/targets/ramips/mt7620",
+          "SDK_FILE": "openwrt-sdk-ramips-mt7620_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_mips64: |
+        {
+          "ARCH": "mips64",
+          "NAME": "octeon",
+          "DETAILS": "octeonplus",
+          "SDK_PATH": "snapshots/targets/octeon/generic",
+          "SDK_FILE": "openwrt-sdk-octeon_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_powerpc: |
+        {
+          "ARCH": "powerpc",
+          "NAME": "apm821xx-nand",
+          "DETAILS": "464fp",
+          "SDK_PATH": "snapshots/targets/apm821xx/nand",
+          "SDK_FILE": "openwrt-sdk-apm821xx-nand_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "powerpc",
+          "NAME": "mpc85xx-p1010",
+          "DETAILS": "8540",
+          "SDK_PATH": "snapshots/targets/mpc85xx/p1010",
+          "SDK_FILE": "openwrt-sdk-mpc85xx-p1010_*.Linux-x86_64.tar.xz"
+        },
+      TARGETS_x86: |
+        {
+          "ARCH": "x86",
+          "NAME": "x86-generic",
+          "DETAILS": "i386, pentium4",
+          "SDK_PATH": "snapshots/targets/x86/generic",
+          "SDK_FILE": "openwrt-sdk-x86-generic_*.Linux-x86_64.tar.xz"
+        },
+        {
+          "ARCH": "x86",
+          "NAME": "x86-64",
+          "DETAILS": "x86_64",
+          "SDK_PATH": "snapshots/targets/x86/64",
+          "SDK_FILE": "openwrt-sdk-x86-64_*.Linux-x86_64.tar.xz"
+        },
+    outputs:
+      targets: ${{ steps.get-targets.outputs.targets }}
+    steps:
+      - name: Get targets
+        id: get-targets
+        shell: bash
+        run: |
+          arch=${GITHUB_REF#refs/heads/build/}
+          arch=${arch%%/*}
+          result=
+
+          echo "Getting targets for $arch"
+
+          if [ "$arch" = all ]; then
+              for arch in $ARCHS; do
+                  eval "result=\$result\$TARGETS_$arch"
+              done
+          else
+              eval "result=\$TARGETS_$arch"
+          fi
+
+          result=${result//$'\n'/}
+          result=[${result%,}]
+
+          echo '::group::Result'
+          echo "$result"
+          echo '::endgroup::'
+
+          echo "::set-output name=targets::$result"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: get-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        TARGET: ${{ fromJson(needs.get-targets.outputs.targets) }}
+
+    name: ${{ matrix.TARGET.ARCH }}/${{ matrix.TARGET.NAME }} (${{ matrix.TARGET.DETAILS }})
+
+    steps:
+      - name: Install dependencies
+        run: >-
+          sudo apt-get install -y --no-install-recommends
+          build-essential
+          bzr
+          curl
+          jq
+          gawk
+          gettext
+          git
+          libncurses5-dev
+          libssl-dev
+          python
+          python3
+          signify-openbsd
+          subversion
+          time
+          unzip
+          wget
+          xz-utils
+          zlib1g-dev
+
+      - uses: actions/checkout@v2
+        with:
+          path: openwrt_packages
+
+      - name: Find packages to build
+        working-directory: openwrt_packages
+        run: |
+          PKGS=$(grep -hs '^\s*\w' github-build || true)
+          if [ -z "$PKGS" ]; then
+              echo '::error::No packages to build'
+              exit 1
+          fi
+          echo "Found packages: $PKGS"
+          echo "PKGS=$PKGS" >> $GITHUB_ENV
+
+      - name: Import gpg/usign keys
+        working-directory: openwrt_packages/.github/openwrt/keys
+        run: |
+          echo '::group::OpenWrt Build System (PGP key for unattended snapshot builds)'
+          gpg --import gpg_626471F1.asc
+          gpg --fingerprint --with-colons '<pgpsign-snapshots@openwrt.org>' | grep '^fpr:::::::::54CC74307A2C6DC9CE618269CD84BCED626471F1:$'
+          echo '54CC74307A2C6DC9CE618269CD84BCED626471F1:6:' | gpg --import-ownertrust
+          echo '::endgroup::'
+
+          echo '::group::OpenWrt Build System (PGP key for 17.01 "Reboot" release builds)'
+          gpg --import gpg_D52BBB6B.asc
+          gpg --fingerprint --with-colons '<pgpsign-17.01@openwrt.org>' | grep '^fpr:::::::::B09BE781AE8A0CD4702FDCD3833C6010D52BBB6B:$'
+          echo 'B09BE781AE8A0CD4702FDCD3833C6010D52BBB6B:6:' | gpg --import-ownertrust
+          echo '::endgroup::'
+
+          echo '::group::OpenWrt Release Builder (18.06 Signing Key)'
+          gpg --import gpg_17E1CE16.asc
+          gpg --fingerprint --with-colons '<openwrt-devel@lists.openwrt.org>' | grep '^fpr:::::::::6768C55E79B032D77A28DA5F0F20257417E1CE16:$'
+          echo '6768C55E79B032D77A28DA5F0F20257417E1CE16:6:' | gpg --import-ownertrust
+          echo '::endgroup::'
+
+          echo '::group::OpenWrt Build System (PGP key for 19.07 release builds)'
+          gpg --import gpg_2074BE7A.asc
+          gpg --fingerprint --with-colons '<pgpsign-19.07@openwrt.org>' | grep '^fpr:::::::::D9C6901F45C9B86858687DFF28A39BC32074BE7A:$'
+          echo 'D9C6901F45C9B86858687DFF28A39BC32074BE7A:6:' | gpg --import-ownertrust
+          echo '::endgroup::'
+
+          echo '::group::untrusted comment: Public usign key for unattended snapshot builds'
+          echo "d7ac10f9ed1b38033855f3d27c9327d558444fca804c685b17d9dcfb0648228f *$PWD/usign_b5043e70f9a75cde" | sha256sum --check
+          echo '::endgroup::'
+
+          echo '::group::untrusted comment: Public usign key for 19.07 release builds'
+          echo "b1d09457cfbc36fccfe18382d65c54a2ade3e7fd3902da490a53aa517b512755 *$PWD/usign_f94b9dd6febac963" | sha256sum --check
+          echo '::endgroup::'
+
+      - name: Set up directories
+        run: mkdir sdk build_dir
+
+      - name: Download SDK sha256sums
+        working-directory: sdk
+        env:
+          SDK_PATH: ${{ matrix.TARGET.SDK_PATH }}
+          SDK_FILE: ${{ matrix.TARGET.SDK_FILE }}
+        run: |
+          curl "https://$SDK_HOST/$SDK_PATH/sha256sums" -sS -o sha256sums
+          curl "https://$SDK_HOST/$SDK_PATH/sha256sums.asc" -fs -o sha256sums.asc || true
+          curl "https://$SDK_HOST/$SDK_PATH/sha256sums.sig" -fs -o sha256sums.sig || true
+          if [ ! -f sha256sums.asc ] && [ ! -f sha256sums.sig ]; then
+              echo "::error::Missing sha256sums signature files"
+              exit 1
+          fi
+          [ ! -f sha256sums.asc ] || gpg --with-fingerprint --verify sha256sums.asc sha256sums
+          if [ -f sha256sums.sig ]; then
+              VERIFIED=
+              for KEY in ../openwrt_packages/.github/openwrt/keys/usign_*; do
+                  echo "Trying ${KEY##*/}..."
+                  if signify-openbsd -V -q -p "$KEY" -x sha256sums.sig -m sha256sums; then
+                      echo "...verified"
+                      VERIFIED=1
+                      break
+                  fi
+              done
+              if [ -z "$VERIFIED" ]; then
+                  echo "::error::Could not verify usign signature"
+                  exit 1
+              fi
+          fi
+
+      - name: Cache SDK
+        uses: actions/cache@v1
+        with:
+          path: sdk
+          key: ${{ runner.os }}-build-sdk-${{ hashFiles('sdk/sha256sums') }}
+
+      - name: Download SDK
+        working-directory: sdk
+        env:
+          SDK_PATH: ${{ matrix.TARGET.SDK_PATH }}
+          SDK_FILE: ${{ matrix.TARGET.SDK_FILE }}
+        run: |
+          rsync -av "$SDK_HOST::downloads/$SDK_PATH/$SDK_FILE" .
+          sha256sum -c --ignore-missing sha256sums
+
+      - name: Prepare build_dir
+        working-directory: build_dir
+        env:
+          SDK_FILE: ${{ matrix.TARGET.SDK_FILE }}
+        run: |
+          tar Jxf ../sdk/$SDK_FILE --strip=1
+
+          echo '::group::Prereq check'
+          touch .config
+          make prepare-tmpinfo scripts/config/conf
+          ./scripts/config/conf --defconfig=.config Config.in
+          make prereq
+          rm .config
+          echo '::endgroup::'
+
+          echo '::group::feeds.conf'
+          cat > feeds.conf <<EOF
+          src-git base https://github.com/openwrt/openwrt.git;$BRANCH
+          src-link packages $GITHUB_WORKSPACE/openwrt_packages
+          src-git luci https://github.com/openwrt/luci.git;$BRANCH
+          EOF
+          cat feeds.conf
+          echo '::endgroup::'
+
+          echo '::group::feeds update -a'
+          ./scripts/feeds update -a
+          echo '::endgroup::'
+
+          for PKG in $PKGS ; do
+              echo "::group::feeds install $PKG"
+              ./scripts/feeds install "$PKG"
+              echo '::endgroup::'
+          done
+
+          echo '::group::make defconfig'
+          cat > .config <<EOF
+          CONFIG_BUILD_LOG=y
+          EOF
+          make defconfig
+          echo '::endgroup::'
+
+      - name: Cache package downloads
+        uses: actions/cache@v1
+        with:
+          path: build_dir/dl
+          key: ${{ runner.os }}-build-dl-${{ hashFiles('build_dir/tmp/.packageinfo') }}
+          restore-keys: |
+            ${{ runner.os }}-build-dl-
+
+      - name: Download, check, and build packages
+        working-directory: build_dir
+        env:
+          BUILD_NAME: ${{ matrix.TARGET.ARCH }}/${{ matrix.TARGET.NAME }}
+        shell: bash
+        run: |
+          for PKG in $PKGS ; do
+              echo "::group::Check $PKG"
+
+              make "package/$PKG/download" V=s
+              make "package/$PKG/check" V=s 2>&1 | tee logtmp
+              RET=${PIPESTATUS[0]}
+
+              if [ $RET -ne 0 ]; then
+                  echo "::error::Package check failed: $RET"
+                  exit $RET
+              fi
+
+              badhash_msg="HASH does not match "
+              badhash_msg+="|HASH uses deprecated hash,"
+              badhash_msg+="|HASH is missing,"
+              if grep -qE "$badhash_msg" logtmp; then
+                  echo '::error::Package HASH check failed'
+                  exit 1
+              fi
+
+              echo '::endgroup::'
+          done
+
+          make \
+              -f .config \
+              -f tmp/.packagedeps \
+              -f <(echo '$(info $(sort $(package-y) $(package-m)))'; echo -en 'a:\n\t@:') \
+           | tr ' ' '\n' >enabled-package-subdirs.txt
+
+          for PKG in $PKGS ; do
+              if ! grep -m1 -qE "(^|/)$PKG$" enabled-package-subdirs.txt; then
+                  echo "::warning::Build $PKG skipped. It cannot be enabled with $BUILD_NAME"
+                  continue
+              fi
+
+              echo "::group::Build $PKG"
+              make "package/$PKG/compile" -j3 V=s || {
+                  RET=$?
+                  echo '::endgroup::'
+                  echo "::error::Build $PKG failed, rebuilding with -j1 for human readable error log"
+                  echo "::group::Rebuild $PKG"
+                  make "package/$PKG/compile" -j1 V=s
+                  echo "::error::Build $PKG failed"
+                  exit $RET
+              }
+              echo '::endgroup::'
+          done
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.TARGET.ARCH }}-${{ matrix.TARGET.NAME }}-logs
+          path: build_dir/logs/
+
+      - name: Upload bin
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.TARGET.ARCH }}-${{ matrix.TARGET.NAME }}-bin
+          path: build_dir/bin/
+
